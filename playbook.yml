@@ -1,0 +1,81 @@
+- name: Setup NGINX and FFmpeg to display the latest frame from stream
+  hosts: localhost
+  become: yes
+  become_method: sudo
+  vars_prompt:
+    - name: ansible_become_pass
+      prompt: "Enter sudo password"
+      private: yes
+  tasks:
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Install Docker Compose
+      apt:
+        name: docker-compose
+        state: present
+        update_cache: yes
+
+    - name: Create directory for FFmpeg output
+      file:
+        path: /opt/stream
+        state: directory
+        mode: '0755'
+
+    - name: Set permissions for the /opt/stream directory
+      file:
+        path: /opt/stream
+        state: directory
+        mode: '0755'
+        recurse: yes
+
+    - name: Create Docker Compose file
+      copy:
+        dest: /opt/stream/docker-compose.yml
+        content: |
+          version: '3'
+          services:
+            ffmpeg:
+              image: jrottenberg/ffmpeg:4.4-ubuntu
+              container_name: ffmpeg
+              restart: always
+              volumes:
+                - /opt/stream:/output
+              command: >
+                -loglevel error
+                -i http://webcam.mchcares.com/mjpg/video.mjpg
+                -vf fps=1
+                -update 1
+                /output/latest.jpg
+
+            nginx:
+              image: nginx:latest
+              container_name: nginx
+              restart: always
+              volumes:
+                - /opt/stream:/usr/share/nginx/html:ro
+              ports:
+                - "8081:80"
+
+    - name: Create index.html to redirect to latest.jpg
+      copy:
+        dest: /opt/stream/index.html
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta http-equiv="refresh" content="0; URL='latest.jpg'" />
+          </head>
+          <body>
+              <p>If you are not redirected automatically, follow this <a href="latest.jpg">link</a>.</p>
+          </body>
+          </html>
+
+    - name: Start Docker Compose services
+      command: docker-compose up -d
+      args:
+        chdir: /opt/stream
+
